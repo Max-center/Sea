@@ -1,0 +1,1 @@
+Hello! Move sea.bat to the window with cmd to see information of all users !
