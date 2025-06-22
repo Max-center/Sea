@@ -1,1 +1,1 @@
-Hello! Start sea.bat to see information of all users !
+Hello! Start sea.bat (or sea.sh for Linux) to see information of all users !
