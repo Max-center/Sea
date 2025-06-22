@@ -1,2 +1,3 @@
 cd /home/
-ls -l
+ls
+bash
