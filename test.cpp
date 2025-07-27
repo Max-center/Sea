@@ -1,32 +1,61 @@
 // SeaExplorer.cpp
-// Фінальний GUI-проєкт WinAPI з синім фоном, списком файлів та вбудованим cmd.exe
+// Фінальний GUI-проєкт WinAPI з синім фоном, динамічним списком та вбудованим cmd.exe
 
 #include <windows.h>
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <thread>
+#include <chrono>
 namespace fs = std::filesystem;
 
 const wchar_t CLASS_NAME[] = L"SeaExplorerWindow";
 HWND hListBox;
 HWND hCmdWindow = nullptr;
+std::wstring currentDirectory = L"C:\\Users";
 
-// Отримує список файлів з C:\Users
-std::vector<std::wstring> GetUserDirectoryFiles() {
+// Отримує список файлів з заданої директорії
+std::vector<std::wstring> GetDirectoryFiles(const std::wstring& path) {
     std::vector<std::wstring> files;
-    std::wstring path = L"C:\\Users";
-
-    for (const auto& entry : fs::directory_iterator(path)) {
-        files.push_back(entry.path().filename().wstring());
+    try {
+        for (const auto& entry : fs::directory_iterator(path)) {
+            files.push_back(entry.path().filename().wstring());
+        }
+    } catch (...) {
+        files.push_back(L"[Access Denied or Invalid Path]");
     }
     return files;
 }
 
-// Заповнює ListBox
-void PopulateListBox(HWND hListBox) {
-    std::vector<std::wstring> files = GetUserDirectoryFiles();
+// Очищає і заповнює ListBox
+void PopulateListBox(HWND hListBox, const std::wstring& path) {
+    SendMessage(hListBox, LB_RESETCONTENT, 0, 0);
+    std::vector<std::wstring> files = GetDirectoryFiles(path);
     for (const auto& file : files) {
         SendMessage(hListBox, LB_ADDSTRING, 0, (LPARAM)file.c_str());
+    }
+}
+
+// Отримує поточну директорію з cmd.exe (через ReadProcessMemory — спрощено імітовано)
+void MonitorDirectory(HWND hwnd) {
+    while (true) {
+        HWND hwndCmd = FindWindowW(L"ConsoleWindowClass", nullptr);
+        if (hwndCmd) {
+            wchar_t title[1024];
+            GetWindowText(hwndCmd, title, 1024);
+
+            std::wstring newDir(title);
+            size_t pos = newDir.find(L" - ");
+            if (pos != std::wstring::npos) {
+                newDir = newDir.substr(0, pos);
+            }
+
+            if (fs::exists(newDir) && newDir != currentDirectory) {
+                currentDirectory = newDir;
+                PostMessage(hwnd, WM_USER + 1, 0, 0);
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::seconds(2));
     }
 }
 
@@ -42,8 +71,7 @@ void EmbedCMD(HWND hwndParent) {
     CreateProcessW(nullptr, cmdLine, nullptr, nullptr, FALSE,
                    CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &pi);
 
-    Sleep(500); // дати вікну час з'явитись
-
+    Sleep(500);
     HWND hwndCmd = FindWindowW(L"ConsoleWindowClass", nullptr);
     if (hwndCmd) {
         SetParent(hwndCmd, hwndParent);
@@ -51,6 +79,7 @@ void EmbedCMD(HWND hwndParent) {
         MoveWindow(hwndCmd, 20, 320, 300, 200, TRUE);
         hCmdWindow = hwndCmd;
     }
+    std::thread(MonitorDirectory, hwndParent).detach();
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -64,8 +93,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                                  WS_VISIBLE | WS_CHILD | WS_BORDER | LBS_NOTIFY,
                                  20, 40, 300, 250, hwnd, nullptr, nullptr, nullptr);
 
-        PopulateListBox(hListBox);
+        PopulateListBox(hListBox, currentDirectory);
         EmbedCMD(hwnd);
+        break;
+
+    case WM_USER + 1:
+        PopulateListBox(hListBox, currentDirectory);
         break;
 
     case WM_ERASEBKGND: {
